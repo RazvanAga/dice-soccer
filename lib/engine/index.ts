@@ -14,3 +14,10 @@ export {
 } from "./match";
 export type { RoundPlay, TournamentPlay } from "./tournament";
 export { advance, playTournament } from "./tournament";
+export type {
+  MatchPrediction,
+  RoundScore,
+  ScoredTournament,
+  PickStrategy,
+} from "./scoring";
+export { cpuPicks, scoreRound, scoreTournament } from "./scoring";

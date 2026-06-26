@@ -1,15 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import BracketScreen from "./_components/bracket-screen";
-
-type Screen = "start" | "tournament";
+import Game from "./_components/game";
 
 export default function Home() {
-  const [screen, setScreen] = useState<Screen>("start");
+  // The START splash shows only on first app entry; once the Tournament begins,
+  // replays loop inside Game and never return here.
+  const [started, setStarted] = useState(false);
 
-  if (screen === "tournament") {
-    return <BracketScreen onBack={() => setScreen("start")} />;
+  if (started) {
+    return <Game />;
   }
 
   return (
@@ -25,7 +25,7 @@ export default function Home() {
       </div>
 
       <button
-        onClick={() => setScreen("tournament")}
+        onClick={() => setStarted(true)}
         className="bg-accent active:bg-accent-strong w-full rounded-2xl py-5 text-xl font-black tracking-wide text-black transition-colors"
       >
         START
