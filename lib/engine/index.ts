@@ -5,3 +5,10 @@ export { TEAMS } from "./teams";
 export type { Round } from "./rounds";
 export { ROUNDS } from "./rounds";
 export { createBracket } from "./bracket";
+export type { MatchResult } from "./match";
+export {
+  FAVORITE_DIE,
+  UNDERDOG_DIE,
+  resolveMatch,
+  resolveRound,
+} from "./match";
