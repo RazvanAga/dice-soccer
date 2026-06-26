@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import {
+  advance,
   createBracket,
   createSeededRng,
   resolveRound,
@@ -107,13 +108,19 @@ export default function BracketScreen({ onBack }: { onBack: () => void }) {
   // Build one Bracket per Tournament from a random seed; the seed makes the
   // Pairings reproducible while the engine stays deterministic.
   const [bracket] = useState(() => createBracket(createSeededRng(randomSeed())));
+  const [roundIndex, setRoundIndex] = useState(0);
+  const [matches, setMatches] = useState<readonly Match[]>(
+    () => bracket.firstRound,
+  );
   const [results, setResults] = useState<MatchResult[] | null>(null);
   const [revealed, setRevealed] = useState(0);
   const [face, setFace] = useState(0);
 
-  const round = ROUNDS[0];
+  const round = ROUNDS[roundIndex];
+  const isFinal = roundIndex === ROUNDS.length - 1;
   const rolling = results !== null && revealed < results.length;
-  const played = results !== null;
+  const roundDone = results !== null && revealed >= results.length;
+  const champion = isFinal && roundDone ? results![0].winner : null;
 
   // Reveal the Matches one by one for a quick sequential animation.
   useEffect(() => {
@@ -130,8 +137,15 @@ export default function BracketScreen({ onBack }: { onBack: () => void }) {
   }, [rolling]);
 
   function play() {
-    if (played) return;
-    setResults(resolveRound(bracket.firstRound, createSeededRng(randomSeed())));
+    setResults(resolveRound(matches, createSeededRng(randomSeed())));
+    setRevealed(0);
+  }
+
+  function nextRound() {
+    if (!results) return;
+    setMatches(advance(results));
+    setRoundIndex((r) => r + 1);
+    setResults(null);
     setRevealed(0);
   }
 
@@ -149,33 +163,43 @@ export default function BracketScreen({ onBack }: { onBack: () => void }) {
         </span>
       </header>
 
-      <div className="flex items-center gap-3">
-        <div
-          className={`flex gap-1 text-3xl leading-none ${
-            rolling ? "animate-bounce" : ""
-          }`}
-          aria-hidden
-        >
-          <span>{DICE_FACES[face]}</span>
-          <span>{DICE_FACES[(face + 3) % DICE_FACES.length]}</span>
+      {champion ? (
+        <div className="bg-surface flex items-center justify-center gap-2 rounded-2xl py-4 text-lg font-black">
+          <span aria-hidden>🏆</span>
+          <span className="text-2xl" aria-hidden>
+            {champion.flag}
+          </span>
+          <span>{champion.name}</span>
         </div>
-        <button
-          onClick={play}
-          disabled={played}
-          className="bg-accent active:bg-accent-strong flex-1 rounded-2xl py-3 text-lg font-black tracking-wide text-black transition-colors disabled:opacity-40"
-        >
-          JOACĂ
-        </button>
-      </div>
+      ) : (
+        <div className="flex items-center gap-3">
+          <div
+            className={`flex gap-1 text-3xl leading-none ${
+              rolling ? "animate-bounce" : ""
+            }`}
+            aria-hidden
+          >
+            <span>{DICE_FACES[face]}</span>
+            <span>{DICE_FACES[(face + 3) % DICE_FACES.length]}</span>
+          </div>
+          <button
+            onClick={roundDone ? nextRound : play}
+            disabled={rolling}
+            className="bg-accent active:bg-accent-strong flex-1 rounded-2xl py-3 text-lg font-black tracking-wide text-black transition-colors disabled:opacity-40"
+          >
+            {roundDone ? "RUNDA URMĂTOARE" : "JOACĂ"}
+          </button>
+        </div>
+      )}
 
       <ol className="grid grid-cols-2 gap-2">
-        {bracket.firstRound.map((match, i) => (
+        {matches.map((match, i) => (
           <MatchCard
-            key={i}
+            key={`${roundIndex}-${i}`}
             match={match}
             index={i + 1}
             result={results?.[i] ?? null}
-            revealed={played && i < revealed}
+            revealed={results !== null && i < revealed}
           />
         ))}
       </ol>

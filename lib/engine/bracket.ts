@@ -12,8 +12,8 @@ function shuffle<T>(items: readonly T[], rng: Rng): T[] {
   return result;
 }
 
-/** Form a Match from a Pairing; the lower Rank number is the Favorite. */
-function pair(a: Team, b: Team): Match {
+/** Form a Match from two Teams; the lower Rank number is the Favorite. */
+export function pairTeams(a: Team, b: Team): Match {
   return a.rank < b.rank
     ? { favorite: a, underdog: b }
     : { favorite: b, underdog: a };
@@ -33,7 +33,7 @@ export function createBracket(
   const order = shuffle(teams, rng);
   const firstRound: Match[] = [];
   for (let i = 0; i < order.length; i += 2) {
-    firstRound.push(pair(order[i], order[i + 1]));
+    firstRound.push(pairTeams(order[i], order[i + 1]));
   }
   return { firstRound };
 }
