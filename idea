@@ -1,0 +1,13 @@
+Vreau sa facem o aplicatie simpla cu nextjs + tailwind si sa o hostam gratuit pe vercel.
+Aplicatia este un simulator de meciuri de fotbal.
+Aplicatia este mobile-first/mobile-only, nu ne intereseaza decat mobile.
+Exista 32 de echipe (luam topul celor mai bune 32 de echipe din lume la fotbal)
+cand intram pe website vedem doar un buton mare pe care scrie START.
+apoi ne vor fi prezentate perechi random de echipe 2 cate 2 si va trebui sa alegem una dintre ele, care credem ca va castiga.
+dupa ce am ales de 16 ori dintre 2 echipe, ne va aparea butonul START TURNEU.
+pe ecran vor aparea toate perechile de echipe pe doua coloane, sus doua zaruri si textul JOACA.
+dupa ce apasam pe zaruri/joaca, la fiecare echipa va pica un numar random de la 1 la 6. un meci nu se poate termina in egalitate, o echipa trebuie sa aiba scorul mai mare.
+dupa asta, coloanele se vor actualiza iar castigatorii vor juca cu castigatorii, iar pierzatorii vor fi eliminati.
+la inceput cand selectam echipele care credemc a vor castiga, calcualtorul va alege automat cealalta jumatate.
+in prima runda de 16v16, pentru fiecare echipa aleasa corect, se va primi 1 punct, in runda urmatoare 2, apoi 3, pana in finala cand se vor primi 5.
+La final se va afisa cate puncte are jucatorul si cate calculatorul, iar mai jos un buton cu joaca din nou.
