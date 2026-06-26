@@ -13,8 +13,8 @@ import {
   type MatchResult,
   type Team,
 } from "@/lib/engine";
-
-const DICE_FACES = ["⚀", "⚁", "⚂", "⚃", "⚄", "⚅"];
+import { Die } from "./dice";
+import { Flag } from "./flag";
 
 function randomSeed(): number {
   return (Math.random() * 0xffffffff) >>> 0;
@@ -26,14 +26,18 @@ function newGame() {
   return { matches, cpu: cpuPicks(matches, Math.random) };
 }
 
-/** Always-visible "TU x – y CPU" bar. */
+/** Always-visible "TU x | y CPU" bar; each number pops when it changes. */
 function ScoreBar({ player, cpu }: { player: number; cpu: number }) {
   return (
-    <div className="bg-surface flex items-center justify-center gap-3 rounded-2xl py-2.5 text-sm font-black tracking-wide">
+    <div className="bg-surface/80 flex items-center justify-center gap-3 rounded-2xl py-2.5 text-sm font-black tracking-wide backdrop-blur">
       <span className="text-accent">TU</span>
-      <span className="text-foreground text-xl tabular-nums">{player}</span>
-      <span className="text-muted/50">–</span>
-      <span className="text-foreground text-xl tabular-nums">{cpu}</span>
+      <span key={`p${player}`} className="text-foreground anim-pop text-xl tabular-nums">
+        {player}
+      </span>
+      <span className="bg-muted/30 h-5 w-px" />
+      <span key={`c${cpu}`} className="text-foreground anim-pop text-xl tabular-nums">
+        {cpu}
+      </span>
       <span className="text-muted">CPU</span>
     </div>
   );
@@ -59,7 +63,7 @@ function PickChip({
     correct === null
       ? base
       : correct
-        ? "bg-emerald-500/20 text-emerald-400"
+        ? "bg-accent/20 text-accent"
         : "bg-red-500/20 text-red-400";
   return (
     <span
@@ -84,9 +88,7 @@ function TeamButton({
       onClick={() => onPick(team)}
       className="bg-surface active:bg-accent/20 active:ring-accent flex flex-1 flex-col items-center justify-center gap-3 rounded-3xl p-6 ring-2 ring-transparent transition-colors"
     >
-      <span className="text-6xl leading-none" aria-hidden>
-        {team.flag}
-      </span>
+      <Flag flag={team.flag} name={team.name} className="w-20" />
       <span className="text-center text-xl font-black">{team.name}</span>
       <span className="text-muted/70 text-xs tabular-nums">#{team.rank}</span>
     </button>
@@ -108,7 +110,7 @@ function PredictionCard({
   onPick: (team: Team) => void;
 }) {
   return (
-    <div className="flex flex-1 flex-col gap-4">
+    <div className="anim-card-in flex flex-1 flex-col gap-4">
       <div className="text-center">
         <span className="bg-accent/15 text-accent rounded-full px-3 py-1 text-xs font-bold tracking-widest uppercase">
           {round}
@@ -158,9 +160,7 @@ function ResultCard({
           winner ? "bg-accent/15" : ""
         }`}
       >
-        <span className="text-base leading-none" aria-hidden>
-          {team.flag}
-        </span>
+        <Flag flag={team.flag} name={team.name} className="w-6 shrink-0" />
         <span
           className={`flex-1 truncate text-sm ${
             winner
@@ -200,7 +200,11 @@ function ResultCard({
   }
 
   return (
-    <li className="bg-surface flex flex-col gap-1 rounded-xl p-3">
+    <li
+      className={`bg-surface flex flex-col gap-1 rounded-xl p-3 ${
+        revealed ? "anim-settle" : ""
+      }`}
+    >
       <span className="text-muted/60 text-[0.6rem] font-medium tracking-widest">
         {index}
       </span>
@@ -228,9 +232,9 @@ function FinalScreen({
         : { emoji: "🤝", text: "Egalitate!", tone: "text-foreground" };
 
   return (
-    <main className="flex flex-1 flex-col items-center justify-between p-6">
+    <main className="anim-fade-up flex flex-1 flex-col items-center justify-between p-6">
       <div className="flex flex-1 flex-col items-center justify-center gap-6 text-center">
-        <div className="text-6xl" aria-hidden>
+        <div className="anim-settle text-6xl" aria-hidden>
           {verdict.emoji}
         </div>
         <h1 className={`text-2xl font-black ${verdict.tone}`}>{verdict.text}</h1>
@@ -241,7 +245,7 @@ function FinalScreen({
             </span>
             <span className="text-4xl font-black tabular-nums">{player}</span>
           </div>
-          <span className="text-muted/40 text-2xl">–</span>
+          <span className="bg-muted/30 h-10 w-px" />
           <div className="flex flex-col items-center">
             <span className="text-muted text-xs font-bold tracking-widest">
               CPU
@@ -253,7 +257,7 @@ function FinalScreen({
 
       <button
         onClick={onReplay}
-        className="bg-accent active:bg-accent-strong w-full rounded-2xl py-5 text-xl font-black tracking-wide text-black transition-colors"
+        className="bg-accent active:bg-accent-strong w-full rounded-2xl py-5 text-xl font-black tracking-wide text-black transition-all active:scale-[0.98]"
       >
         JOACĂ DIN NOU
       </button>
@@ -273,7 +277,8 @@ export default function Game() {
 
   const [results, setResults] = useState<MatchResult[] | null>(null);
   const [revealed, setRevealed] = useState(0);
-  const [face, setFace] = useState(0);
+  // Bumped on every play() so the 3D dice re-trigger their tumble.
+  const [rollCount, setRollCount] = useState(0);
 
   // Scores from fully-completed prior Rounds; the current Round is added live.
   const [committedPlayer, setCommittedPlayer] = useState(0);
@@ -295,19 +300,14 @@ export default function Game() {
   const shownCpu =
     committedCpu + (roundDone && roundScore ? roundScore.cpuPoints : 0);
 
-  // Reveal the Matches one by one for a quick sequential animation.
+  // The dice tumble first, then the numbers scatter into the Matches one by
+  // one. The first reveal waits for the roll to settle; the rest cascade fast.
   useEffect(() => {
     if (!results || revealed >= results.length) return;
-    const id = setTimeout(() => setRevealed((n) => n + 1), 110);
+    const delay = revealed === 0 ? 720 : 85;
+    const id = setTimeout(() => setRevealed((n) => n + 1), delay);
     return () => clearTimeout(id);
   }, [results, revealed]);
-
-  // Tumble the dice while results are still being revealed.
-  useEffect(() => {
-    if (!rolling) return;
-    const id = setInterval(() => setFace((f) => (f + 1) % DICE_FACES.length), 90);
-    return () => clearInterval(id);
-  }, [rolling]);
 
   function pick(team: Team) {
     const next = [...playerPicks, team];
@@ -322,6 +322,7 @@ export default function Game() {
   function play() {
     setResults(resolveRound(matches, Math.random));
     setRevealed(0);
+    setRollCount((n) => n + 1);
   }
 
   function finishRound() {
@@ -375,6 +376,7 @@ export default function Game() {
       <main className="flex flex-1 flex-col gap-4 p-4">
         <ScoreBar player={shownPlayer} cpu={shownCpu} />
         <PredictionCard
+          key={`${roundIndex}-${pickIndex}`}
           match={matches[pickIndex]}
           round={round.name}
           index={pickIndex}
@@ -386,7 +388,7 @@ export default function Game() {
   }
 
   return (
-    <main className="flex flex-1 flex-col gap-4 p-4">
+    <main key={`reveal-${roundIndex}`} className="anim-fade-up flex flex-1 flex-col gap-4 p-4">
       <ScoreBar player={shownPlayer} cpu={shownCpu} />
 
       <div className="flex items-center justify-between">
@@ -400,20 +402,15 @@ export default function Game() {
         </span>
       </div>
 
-      <div className="flex items-center gap-3">
-        <div
-          className={`flex gap-1 text-3xl leading-none ${
-            rolling ? "animate-bounce" : ""
-          }`}
-          aria-hidden
-        >
-          <span>{DICE_FACES[face]}</span>
-          <span>{DICE_FACES[(face + 3) % DICE_FACES.length]}</span>
+      <div className="flex items-center gap-4">
+        <div className="flex gap-2.5">
+          <Die value={results?.[0]?.favoriteRoll ?? 5} spin={rollCount} />
+          <Die value={results?.[0]?.underdogRoll ?? 2} spin={rollCount} delay={110} />
         </div>
         <button
           onClick={roundDone ? finishRound : play}
           disabled={rolling}
-          className="bg-accent active:bg-accent-strong flex-1 rounded-2xl py-3 text-lg font-black tracking-wide text-black transition-colors disabled:opacity-40"
+          className="bg-accent active:bg-accent-strong flex-1 rounded-2xl py-3.5 text-lg font-black tracking-wide text-black transition-all active:scale-[0.98] disabled:opacity-40"
         >
           {roundDone ? (isFinal ? "REZULTAT FINAL" : "RUNDA URMĂTOARE") : "JOACĂ"}
         </button>

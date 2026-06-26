@@ -13,9 +13,9 @@ export default function Home() {
   }
 
   return (
-    <main className="flex flex-1 flex-col items-center justify-between p-6">
+    <main className="anim-fade-up flex flex-1 flex-col items-center justify-between p-6">
       <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-        <div className="text-5xl" aria-hidden>
+        <div className="anim-settle text-5xl" aria-hidden>
           ⚽🎲
         </div>
         <h1 className="text-4xl font-black tracking-tight">DICE SOCCER</h1>
@@ -26,7 +26,7 @@ export default function Home() {
 
       <button
         onClick={() => setStarted(true)}
-        className="bg-accent active:bg-accent-strong w-full rounded-2xl py-5 text-xl font-black tracking-wide text-black transition-colors"
+        className="bg-accent active:bg-accent-strong w-full rounded-2xl py-5 text-xl font-black tracking-wide text-black transition-all active:scale-[0.98]"
       >
         START
       </button>
