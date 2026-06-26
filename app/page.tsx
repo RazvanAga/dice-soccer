@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import BracketScreen from "./_components/bracket-screen";
 
 type Screen = "start" | "tournament";
 
@@ -8,21 +9,7 @@ export default function Home() {
   const [screen, setScreen] = useState<Screen>("start");
 
   if (screen === "tournament") {
-    // Placeholder — the Tournament flow is built in later slices.
-    return (
-      <main className="flex flex-1 flex-col items-center justify-center gap-4 p-6 text-center">
-        <p className="text-muted text-sm uppercase tracking-widest">Turneu</p>
-        <p className="text-muted max-w-xs text-sm">
-          Aici va veni bracket-ul. (placeholder)
-        </p>
-        <button
-          onClick={() => setScreen("start")}
-          className="text-muted mt-4 text-sm underline underline-offset-4"
-        >
-          Înapoi
-        </button>
-      </main>
-    );
+    return <BracketScreen onBack={() => setScreen("start")} />;
   }
 
   return (
