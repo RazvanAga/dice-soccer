@@ -1,0 +1,36 @@
+@import "tailwindcss";
+
+:root {
+  /* Dark-only game palette */
+  --background: #0b0f14;
+  --foreground: #f4f6f8;
+  --muted: #8a94a3;
+  --accent: #22c55e; /* "sport" green accent */
+  --accent-strong: #16a34a;
+  --surface: #131a22;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-surface: var(--surface);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  /* Avoid rubber-band/overscroll glow on mobile */
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
