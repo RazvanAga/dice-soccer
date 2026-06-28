@@ -6,7 +6,7 @@ import {
   cpuPicks,
   createBracket,
   createSeededRng,
-  resolveRound,
+  resolveMatch,
   ROUNDS,
   scoreRound,
   type Match,
@@ -54,11 +54,8 @@ function PickChip({
   tone: "player" | "cpu";
 }) {
   const base =
-    tone === "player"
-      ? "bg-accent/20 text-accent"
-      : "bg-muted/15 text-muted";
-  const mark =
-    correct === null ? "" : correct ? " ✓" : " ✗";
+    tone === "player" ? "bg-accent/20 text-accent" : "bg-muted/15 text-muted";
+  const mark = correct === null ? "" : correct ? " ✓" : " ✗";
   const marked =
     correct === null
       ? base
@@ -95,122 +92,57 @@ function TeamButton({
   );
 }
 
-/** Full-screen prediction: one Match, two tappable Teams. */
-function PredictionCard({
-  match,
-  round,
-  index,
-  total,
-  onPick,
+/** One Team's line on the result screen: its Roll, winner highlight, and Picks. */
+function ResultRow({
+  team,
+  roll,
+  isWinner,
+  isPlayer,
+  isCpu,
+  settled,
 }: {
-  match: Match;
-  round: string;
-  index: number;
-  total: number;
-  onPick: (team: Team) => void;
+  team: Team;
+  roll: number;
+  isWinner: boolean;
+  isPlayer: boolean;
+  isCpu: boolean;
+  settled: boolean;
 }) {
+  const win = settled && isWinner;
   return (
-    <div className="anim-card-in flex flex-1 flex-col gap-4">
-      <div className="text-center">
-        <span className="bg-accent/15 text-accent rounded-full px-3 py-1 text-xs font-bold tracking-widest uppercase">
-          {round}
-        </span>
-        <p className="text-muted mt-3 text-sm">
-          Cine merge mai departe?{" "}
-          <span className="text-foreground font-semibold tabular-nums">
-            {index + 1} / {total}
-          </span>
-        </p>
-      </div>
-
-      <div className="flex flex-1 flex-col gap-3">
-        <TeamButton team={match.favorite} onPick={onPick} />
-        <div className="text-muted/60 text-center text-sm font-black tracking-widest">
-          VS
-        </div>
-        <TeamButton team={match.underdog} onPick={onPick} />
-      </div>
-    </div>
-  );
-}
-
-/** One Match in the reveal grid, showing rolls and Pick attribution. */
-function ResultCard({
-  match,
-  index,
-  result,
-  playerPick,
-  cpuPick,
-  revealed,
-}: {
-  match: Match;
-  index: number;
-  result: MatchResult | null;
-  playerPick: Team;
-  cpuPick: Team;
-  revealed: boolean;
-}) {
-  function row(team: Team, favorite: boolean, roll: number | undefined) {
-    const winner = revealed && result?.winner === team;
-    const isPlayer = playerPick === team;
-    const isCpu = cpuPick === team;
-    return (
-      <div
-        className={`flex items-center gap-1.5 rounded-md px-1 py-0.5 ${
-          winner ? "bg-accent/15" : ""
-        }`}
-      >
-        <Flag flag={team.flag} name={team.name} className="w-6 shrink-0" />
+    <div
+      className={`flex items-center gap-3 rounded-2xl px-4 py-3 transition-colors ${
+        win ? "bg-accent/15" : "bg-surface"
+      }`}
+    >
+      <Flag flag={team.flag} name={team.name} className="w-10 shrink-0" />
+      <div className="flex flex-1 flex-col gap-1">
         <span
-          className={`flex-1 truncate text-sm ${
-            winner
-              ? "text-foreground font-semibold"
-              : favorite && !revealed
-                ? "text-foreground"
-                : "text-muted"
-          }`}
+          className={`text-base font-bold ${win ? "text-foreground" : "text-muted"}`}
         >
           {team.name}
         </span>
-        {isPlayer && (
-          <PickChip
-            label="TU"
-            tone="player"
-            correct={revealed && result ? result.winner === team : null}
-          />
-        )}
-        {isCpu && revealed && result && (
-          <PickChip label="CPU" tone="cpu" correct={result.winner === team} />
-        )}
-        {revealed ? (
-          <span
-            className={`w-4 text-right text-sm font-bold tabular-nums ${
-              winner ? "text-accent" : "text-muted"
-            }`}
-          >
-            {roll}
-          </span>
-        ) : (
-          <span className="text-muted/70 w-4 text-right text-[0.65rem] tabular-nums">
-            #{team.rank}
-          </span>
-        )}
+        <div className="flex gap-1">
+          {isPlayer && (
+            <PickChip
+              label="TU"
+              tone="player"
+              correct={settled ? isWinner : null}
+            />
+          )}
+          {isCpu && settled && (
+            <PickChip label="CPU" tone="cpu" correct={isWinner} />
+          )}
+        </div>
       </div>
-    );
-  }
-
-  return (
-    <li
-      className={`bg-surface flex flex-col gap-1 rounded-xl p-3 ${
-        revealed ? "anim-settle" : ""
-      }`}
-    >
-      <span className="text-muted/60 text-[0.6rem] font-medium tracking-widest">
-        {index}
+      <span
+        className={`w-6 text-right text-2xl font-black tabular-nums ${
+          win ? "text-accent" : "text-muted"
+        }`}
+      >
+        {settled ? roll : "?"}
       </span>
-      {row(match.favorite, true, result?.favoriteRoll)}
-      {row(match.underdog, false, result?.underdogRoll)}
-    </li>
+    </div>
   );
 }
 
@@ -271,14 +203,16 @@ export default function Game() {
   const [matches, setMatches] = useState<readonly Match[]>(game.matches);
   const [cpu, setCpu] = useState<readonly Team[]>(game.cpu);
 
-  const [phase, setPhase] = useState<"predict" | "reveal">("predict");
-  const [pickIndex, setPickIndex] = useState(0);
-  const [playerPicks, setPlayerPicks] = useState<Team[]>([]);
+  // We walk one Match at a time: "predict" shows the two Teams, "result" rolls
+  // that Match's dice and reveals the winner before moving on.
+  const [matchIndex, setMatchIndex] = useState(0);
+  const [step, setStep] = useState<"predict" | "result">("predict");
+  // `settled` flips once the dice have landed and their rolls can be read.
+  const [settled, setSettled] = useState(false);
 
-  const [results, setResults] = useState<MatchResult[] | null>(null);
-  const [revealed, setRevealed] = useState(0);
-  // Bumped on every play() so the 3D dice re-trigger their tumble.
-  const [rollCount, setRollCount] = useState(0);
+  // Picks and results accumulate as we go; one entry per resolved Match.
+  const [playerPicks, setPlayerPicks] = useState<Team[]>([]);
+  const [results, setResults] = useState<MatchResult[]>([]);
 
   // Scores from fully-completed prior Rounds; the current Round is added live.
   const [committedPlayer, setCommittedPlayer] = useState(0);
@@ -287,46 +221,44 @@ export default function Game() {
 
   const round = ROUNDS[roundIndex];
   const isFinal = roundIndex === ROUNDS.length - 1;
-  const rolling = results !== null && revealed < results.length;
-  const roundDone = results !== null && revealed >= results.length;
+  const isLastMatch = matchIndex === matches.length - 1;
+  const match = matches[matchIndex];
+  const result = step === "result" ? results[matchIndex] : null;
 
+  // Only Matches whose dice have settled count toward the live Score, so the
+  // bar never pops before the roll is revealed.
+  const revealedResults =
+    step === "result" && !settled ? results.slice(0, -1) : results;
   const roundScore = useMemo(
-    () => (results ? scoreRound(round, results, playerPicks, cpu) : null),
-    [results, round, playerPicks, cpu],
+    () =>
+      scoreRound(round, revealedResults, playerPicks.slice(0, revealedResults.length), cpu),
+    [round, revealedResults, playerPicks, cpu],
   );
+  const shownPlayer = committedPlayer + roundScore.playerPoints;
+  const shownCpu = committedCpu + roundScore.cpuPoints;
 
-  const shownPlayer =
-    committedPlayer + (roundDone && roundScore ? roundScore.playerPoints : 0);
-  const shownCpu =
-    committedCpu + (roundDone && roundScore ? roundScore.cpuPoints : 0);
-
-  // The dice tumble first, then the numbers scatter into the Matches one by
-  // one. The first reveal waits for the roll to settle; the rest cascade fast.
+  // The dice pop in when the result screen appears; reveal the rolls once the
+  // little roll animation has played.
   useEffect(() => {
-    if (!results || revealed >= results.length) return;
-    const delay = revealed === 0 ? 720 : 85;
-    const id = setTimeout(() => setRevealed((n) => n + 1), delay);
+    if (step !== "result") return;
+    const id = setTimeout(() => setSettled(true), 450);
     return () => clearTimeout(id);
-  }, [results, revealed]);
+  }, [step, matchIndex]);
 
   function pick(team: Team) {
-    const next = [...playerPicks, team];
-    setPlayerPicks(next);
-    if (next.length >= matches.length) {
-      setPhase("reveal");
-    } else {
-      setPickIndex((i) => i + 1);
+    setPlayerPicks((p) => [...p, team]);
+    setResults((r) => [...r, resolveMatch(match, Math.random)]);
+    setSettled(false);
+    setStep("result");
+  }
+
+  function next() {
+    if (!isLastMatch) {
+      setMatchIndex((i) => i + 1);
+      setStep("predict");
+      return;
     }
-  }
-
-  function play() {
-    setResults(resolveRound(matches, Math.random));
-    setRevealed(0);
-    setRollCount((n) => n + 1);
-  }
-
-  function finishRound() {
-    if (!roundScore) return;
+    // Last Match of the Round: bank this Round's points and advance.
     setCommittedPlayer((p) => p + roundScore.playerPoints);
     setCommittedCpu((c) => c + roundScore.cpuPoints);
 
@@ -334,15 +266,15 @@ export default function Game() {
       setFinished(true);
       return;
     }
-    const next = advance(results!);
-    setMatches(next);
-    setCpu(cpuPicks(next, Math.random));
+    const nextMatches = advance(results);
+    setMatches(nextMatches);
+    setCpu(cpuPicks(nextMatches, Math.random));
     setRoundIndex((r) => r + 1);
-    setPhase("predict");
-    setPickIndex(0);
+    setMatchIndex(0);
+    setStep("predict");
+    setSettled(false);
     setPlayerPicks([]);
-    setResults(null);
-    setRevealed(0);
+    setResults([]);
   }
 
   function replay() {
@@ -351,11 +283,11 @@ export default function Game() {
     setMatches(fresh.matches);
     setCpu(fresh.cpu);
     setRoundIndex(0);
-    setPhase("predict");
-    setPickIndex(0);
+    setMatchIndex(0);
+    setStep("predict");
+    setSettled(false);
     setPlayerPicks([]);
-    setResults(null);
-    setRevealed(0);
+    setResults([]);
     setCommittedPlayer(0);
     setCommittedCpu(0);
     setFinished(false);
@@ -371,64 +303,100 @@ export default function Game() {
     );
   }
 
-  if (phase === "predict") {
+  const header = (
+    <div className="text-center">
+      <span className="bg-accent/15 text-accent rounded-full px-3 py-1 text-xs font-bold tracking-widest uppercase">
+        {round.name}
+      </span>
+      <p className="text-muted mt-3 text-sm">
+        Meci{" "}
+        <span className="text-foreground font-semibold tabular-nums">
+          {matchIndex + 1} / {matches.length}
+        </span>
+      </p>
+    </div>
+  );
+
+  if (step === "predict") {
     return (
       <main className="flex flex-1 flex-col gap-4 p-4">
         <ScoreBar player={shownPlayer} cpu={shownCpu} />
-        <PredictionCard
-          key={`${roundIndex}-${pickIndex}`}
-          match={matches[pickIndex]}
-          round={round.name}
-          index={pickIndex}
-          total={matches.length}
-          onPick={pick}
-        />
+        <div
+          key={`${roundIndex}-${matchIndex}`}
+          className="anim-card-in flex flex-1 flex-col gap-4"
+        >
+          {header}
+          <p className="text-muted/80 -mt-2 text-center text-sm">
+            Cine merge mai departe?
+          </p>
+          <div className="flex flex-1 flex-col gap-3">
+            <TeamButton team={match.favorite} onPick={pick} />
+            <div className="text-muted/60 text-center text-sm font-black tracking-widest">
+              VS
+            </div>
+            <TeamButton team={match.underdog} onPick={pick} />
+          </div>
+        </div>
       </main>
     );
   }
 
+  const playerPick = playerPicks[matchIndex];
+  const cpuPick = cpu[matchIndex];
+
   return (
-    <main key={`reveal-${roundIndex}`} className="anim-fade-up flex flex-1 flex-col gap-4 p-4">
+    <main
+      key={`result-${roundIndex}-${matchIndex}`}
+      className="anim-fade-up flex flex-1 flex-col gap-4 p-4"
+    >
       <ScoreBar player={shownPlayer} cpu={shownCpu} />
+      {header}
 
-      <div className="flex items-center justify-between">
-        <span className="bg-accent/15 text-accent rounded-full px-3 py-1 text-xs font-bold tracking-widest uppercase">
-          {round.name}
-        </span>
-        <span className="text-muted text-xs">
-          {roundDone
-            ? `+${roundScore?.playerPoints ?? 0} pentru tine`
-            : "zarurile decid"}
-        </span>
-      </div>
-
-      <div className="flex items-center gap-4">
+      <div className="flex flex-1 flex-col items-center justify-center gap-6">
         <div className="flex gap-2.5">
-          <Die value={results?.[0]?.favoriteRoll ?? 5} spin={rollCount} />
-          <Die value={results?.[0]?.underdogRoll ?? 2} spin={rollCount} delay={110} />
+          <Die value={result?.favoriteRoll ?? 5} />
+          <Die value={result?.underdogRoll ?? 2} />
         </div>
-        <button
-          onClick={roundDone ? finishRound : play}
-          disabled={rolling}
-          className="bg-accent active:bg-accent-strong flex-1 rounded-2xl py-3.5 text-lg font-black tracking-wide text-black transition-all active:scale-[0.98] disabled:opacity-40"
-        >
-          {roundDone ? (isFinal ? "REZULTAT FINAL" : "RUNDA URMĂTOARE") : "JOACĂ"}
-        </button>
+
+        <div className="flex w-full flex-col gap-2">
+          <ResultRow
+            team={match.favorite}
+            roll={result?.favoriteRoll ?? 0}
+            isWinner={result?.winner === match.favorite}
+            isPlayer={playerPick === match.favorite}
+            isCpu={cpuPick === match.favorite}
+            settled={settled}
+          />
+          <ResultRow
+            team={match.underdog}
+            roll={result?.underdogRoll ?? 0}
+            isWinner={result?.winner === match.underdog}
+            isPlayer={playerPick === match.underdog}
+            isCpu={cpuPick === match.underdog}
+            settled={settled}
+          />
+        </div>
+
+        <p className="text-muted h-5 text-sm">
+          {!settled
+            ? "zarurile decid…"
+            : playerPick === result?.winner
+              ? `Corect! +${round.points} pentru tine`
+              : "De data asta nu."}
+        </p>
       </div>
 
-      <ol className="grid grid-cols-2 gap-2">
-        {matches.map((match, i) => (
-          <ResultCard
-            key={`${roundIndex}-${i}`}
-            match={match}
-            index={i + 1}
-            result={results?.[i] ?? null}
-            playerPick={playerPicks[i]}
-            cpuPick={cpu[i]}
-            revealed={results !== null && i < revealed}
-          />
-        ))}
-      </ol>
+      <button
+        onClick={next}
+        disabled={!settled}
+        className="bg-accent active:bg-accent-strong w-full rounded-2xl py-4 text-lg font-black tracking-wide text-black transition-all active:scale-[0.98] disabled:opacity-40"
+      >
+        {isLastMatch
+          ? isFinal
+            ? "REZULTAT FINAL"
+            : "RUNDA URMĂTOARE"
+          : "URMĂTORUL MECI"}
+      </button>
     </main>
   );
 }
