@@ -1,8 +1,7 @@
-import { createBracket } from "./bracket";
-import { resolveRound, type MatchResult } from "./match";
-import { ROUNDS, type Round } from "./rounds";
+import { type MatchResult } from "./match";
+import { type Round } from "./rounds";
 import type { Rng } from "./rng";
-import { advance } from "./tournament";
+import { playTournament } from "./tournament";
 import type { Match, Team } from "./types";
 
 /**
@@ -84,30 +83,32 @@ export type PickStrategy = (
 
 /**
  * Score a whole Tournament deterministically from one Rng and a Player Pick
- * strategy: build a Bracket, then for each Round take the Player's Picks, draw
- * the CPU's random Picks, resolve the dice, score the Round, and advance the
- * winners. A fixed seed and strategy always yield the same Scores.
+ * strategy. The Bracket progression itself is `playTournament`'s job; scoring is
+ * a second pass over its Rounds — take the Player's Picks, draw the CPU's, and
+ * score each resolved Round. A fixed seed and strategy always yield the same
+ * Scores.
  */
 export function scoreTournament(
   rng: Rng,
   pickStrategy: PickStrategy,
 ): ScoredTournament {
-  let matches: readonly Match[] = createBracket(rng).firstRound;
-  const rounds: RoundScore[] = [];
-  for (const round of ROUNDS) {
-    const playerPicks = pickStrategy(matches, round);
-    const computerPicks = cpuPicks(matches, rng);
-    const results = resolveRound(matches, rng);
-    rounds.push(scoreRound(round, results, playerPicks, computerPicks));
-    matches = advance(results);
-  }
+  const play = playTournament(rng);
+  const rounds: RoundScore[] = play.rounds.map((roundPlay) => {
+    const playerPicks = pickStrategy(roundPlay.matches, roundPlay.round);
+    const computerPicks = cpuPicks(roundPlay.matches, rng);
+    return scoreRound(
+      roundPlay.round,
+      roundPlay.results,
+      playerPicks,
+      computerPicks,
+    );
+  });
   const playerScore = rounds.reduce((sum, r) => sum + r.playerPoints, 0);
   const cpuScore = rounds.reduce((sum, r) => sum + r.cpuPoints, 0);
-  const final = rounds[rounds.length - 1];
   return {
     rounds,
     playerScore,
     cpuScore,
-    champion: final.predictions[0].result.winner,
+    champion: play.champion,
   };
 }

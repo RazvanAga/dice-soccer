@@ -21,3 +21,18 @@ export type {
   PickStrategy,
 } from "./scoring";
 export { cpuPicks, scoreRound, scoreTournament } from "./scoring";
+export type { Playthrough } from "./play";
+export {
+  startPlaythrough,
+  pick,
+  next,
+  currentRound,
+  currentMatch,
+  currentResult,
+  currentPlayerPick,
+  currentCpuPick,
+  isResolved,
+  isLastMatch,
+  isFinalRound,
+  scores,
+} from "./play";

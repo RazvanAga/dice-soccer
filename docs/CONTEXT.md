@@ -47,6 +47,13 @@ A single playthrough: one Bracket of 32 Teams played from 16-imi to the Final,
 ending in a final Score comparison. Replaying starts a fresh Tournament.
 _Avoid_: Game, session, run.
 
+**Playthrough**:
+The moment-to-moment state of a Tournament in progress, advanced one Match at a
+time: the Player Picks a winner, the dice resolve that Match, then the cursor
+steps to the next Match — or, after a Round's last Match, banks its points and
+advances the survivors. A whole Tournament is one Playthrough run to completion.
+_Avoid_: Game state, session, run.
+
 **Bracket**:
 The fixed single-elimination tree of 32 Teams. The first-round Pairings are
 random; from there the tree is fixed (winners advance to predetermined slots).

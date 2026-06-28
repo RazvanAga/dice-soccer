@@ -1,16 +1,20 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
-  advance,
-  cpuPicks,
-  createBracket,
   createSeededRng,
-  resolveMatch,
-  ROUNDS,
-  scoreRound,
-  type Match,
-  type MatchResult,
+  currentCpuPick,
+  currentMatch,
+  currentPlayerPick,
+  currentResult,
+  currentRound,
+  isFinalRound,
+  isLastMatch,
+  isResolved,
+  next,
+  pick,
+  scores,
+  startPlaythrough,
   type Team,
 } from "@/lib/engine";
 import { Die } from "./dice";
@@ -18,12 +22,6 @@ import { Flag } from "./flag";
 
 function randomSeed(): number {
   return (Math.random() * 0xffffffff) >>> 0;
-}
-
-/** Build a fresh Bracket plus the CPU's hidden first-Round Picks. */
-function newGame() {
-  const matches = createBracket(createSeededRng(randomSeed())).firstRound;
-  return { matches, cpu: cpuPicks(matches, Math.random) };
 }
 
 /** Always-visible "TU x | y CPU" bar; each number pops when it changes. */
@@ -198,111 +196,60 @@ function FinalScreen({
 }
 
 export default function Game() {
-  const [game, setGame] = useState(newGame);
-  const [roundIndex, setRoundIndex] = useState(0);
-  const [matches, setMatches] = useState<readonly Match[]>(game.matches);
-  const [cpu, setCpu] = useState<readonly Team[]>(game.cpu);
-
-  // We walk one Match at a time: "predict" shows the two Teams, "result" rolls
-  // that Match's dice and reveals the winner before moving on.
-  const [matchIndex, setMatchIndex] = useState(0);
-  const [step, setStep] = useState<"predict" | "result">("predict");
-  // `settled` flips once the dice have landed and their rolls can be read.
+  // One Rng drives the whole Playthrough — Bracket, dice, and CPU Picks alike —
+  // so a Tournament is reproducible from its seed and no raw randomness leaks in.
+  // It lives beside the Playthrough in state: the Rng's internal counter mutates
+  // as it draws, while each transition returns a fresh Playthrough value.
+  const [{ rng, play }, setSession] = useState(() => {
+    const rng = createSeededRng(randomSeed());
+    return { rng, play: startPlaythrough(rng) };
+  });
+  // `settled` flips once the dice have landed and their rolls can be read. It is
+  // pure view timing, so it stays in React rather than in the Playthrough.
   const [settled, setSettled] = useState(false);
 
-  // Picks and results accumulate as we go; one entry per resolved Match.
-  const [playerPicks, setPlayerPicks] = useState<Team[]>([]);
-  const [results, setResults] = useState<MatchResult[]>([]);
+  const resolved = isResolved(play);
 
-  // Scores from fully-completed prior Rounds; the current Round is added live.
-  const [committedPlayer, setCommittedPlayer] = useState(0);
-  const [committedCpu, setCommittedCpu] = useState(0);
-  const [finished, setFinished] = useState(false);
-
-  const round = ROUNDS[roundIndex];
-  const isFinal = roundIndex === ROUNDS.length - 1;
-  const isLastMatch = matchIndex === matches.length - 1;
-  const match = matches[matchIndex];
-  const result = step === "result" ? results[matchIndex] : null;
-
-  // Only Matches whose dice have settled count toward the live Score, so the
-  // bar never pops before the roll is revealed.
-  const revealedResults =
-    step === "result" && !settled ? results.slice(0, -1) : results;
-  const roundScore = useMemo(
-    () =>
-      scoreRound(round, revealedResults, playerPicks.slice(0, revealedResults.length), cpu),
-    [round, revealedResults, playerPicks, cpu],
-  );
-  const shownPlayer = committedPlayer + roundScore.playerPoints;
-  const shownCpu = committedCpu + roundScore.cpuPoints;
-
-  // The dice pop in when the result screen appears; reveal the rolls once the
-  // little roll animation has played.
+  // The dice pop in when a Match resolves; reveal the rolls once the little roll
+  // animation has played.
   useEffect(() => {
-    if (step !== "result") return;
+    if (!resolved) return;
     const id = setTimeout(() => setSettled(true), 450);
     return () => clearTimeout(id);
-  }, [step, matchIndex]);
+  }, [resolved, play.matchIndex, play.roundIndex]);
 
-  function pick(team: Team) {
-    setPlayerPicks((p) => [...p, team]);
-    setResults((r) => [...r, resolveMatch(match, Math.random)]);
+  // Each transition draws from the Rng exactly once, here in the handler — never
+  // inside a state updater, which React may run more than once.
+  function onPick(team: Team) {
     setSettled(false);
-    setStep("result");
+    setSession({ rng, play: pick(play, team, rng) });
   }
 
-  function next() {
-    if (!isLastMatch) {
-      setMatchIndex((i) => i + 1);
-      setStep("predict");
-      return;
-    }
-    // Last Match of the Round: bank this Round's points and advance.
-    setCommittedPlayer((p) => p + roundScore.playerPoints);
-    setCommittedCpu((c) => c + roundScore.cpuPoints);
-
-    if (isFinal) {
-      setFinished(true);
-      return;
-    }
-    const nextMatches = advance(results);
-    setMatches(nextMatches);
-    setCpu(cpuPicks(nextMatches, Math.random));
-    setRoundIndex((r) => r + 1);
-    setMatchIndex(0);
-    setStep("predict");
+  function onNext() {
     setSettled(false);
-    setPlayerPicks([]);
-    setResults([]);
+    setSession({ rng, play: next(play, rng) });
   }
 
   function replay() {
-    const fresh = newGame();
-    setGame(fresh);
-    setMatches(fresh.matches);
-    setCpu(fresh.cpu);
-    setRoundIndex(0);
-    setMatchIndex(0);
-    setStep("predict");
+    const fresh = createSeededRng(randomSeed());
     setSettled(false);
-    setPlayerPicks([]);
-    setResults([]);
-    setCommittedPlayer(0);
-    setCommittedCpu(0);
-    setFinished(false);
+    setSession({ rng: fresh, play: startPlaythrough(fresh) });
   }
 
-  if (finished) {
+  // Hold the just-resolved Match out of the live Score until its dice settle, so
+  // the bar never pops before the roll is revealed.
+  const revealed = resolved && !settled ? play.results.length - 1 : play.results.length;
+  const { player: shownPlayer, cpu: shownCpu } = scores(play, revealed);
+
+  if (play.finished) {
+    const final = scores(play);
     return (
-      <FinalScreen
-        player={committedPlayer}
-        cpu={committedCpu}
-        onReplay={replay}
-      />
+      <FinalScreen player={final.player} cpu={final.cpu} onReplay={replay} />
     );
   }
 
+  const round = currentRound(play);
+  const match = currentMatch(play);
   const header = (
     <div className="text-center">
       <span className="bg-accent/15 text-accent rounded-full px-3 py-1 text-xs font-bold tracking-widest uppercase">
@@ -311,18 +258,18 @@ export default function Game() {
       <p className="text-muted mt-3 text-sm">
         Meci{" "}
         <span className="text-foreground font-semibold tabular-nums">
-          {matchIndex + 1} / {matches.length}
+          {play.matchIndex + 1} / {play.matches.length}
         </span>
       </p>
     </div>
   );
 
-  if (step === "predict") {
+  if (!resolved) {
     return (
       <main className="flex flex-1 flex-col gap-4 p-4">
         <ScoreBar player={shownPlayer} cpu={shownCpu} />
         <div
-          key={`${roundIndex}-${matchIndex}`}
+          key={`${play.roundIndex}-${play.matchIndex}`}
           className="anim-card-in flex flex-1 flex-col gap-4"
         >
           {header}
@@ -330,23 +277,26 @@ export default function Game() {
             Cine merge mai departe?
           </p>
           <div className="flex flex-1 flex-col gap-3">
-            <TeamButton team={match.favorite} onPick={pick} />
+            <TeamButton team={match.favorite} onPick={onPick} />
             <div className="text-muted/60 text-center text-sm font-black tracking-widest">
               VS
             </div>
-            <TeamButton team={match.underdog} onPick={pick} />
+            <TeamButton team={match.underdog} onPick={onPick} />
           </div>
         </div>
       </main>
     );
   }
 
-  const playerPick = playerPicks[matchIndex];
-  const cpuPick = cpu[matchIndex];
+  const result = currentResult(play);
+  const playerPick = currentPlayerPick(play);
+  const cpuPick = currentCpuPick(play);
+  const lastMatch = isLastMatch(play);
+  const isFinal = isFinalRound(play);
 
   return (
     <main
-      key={`result-${roundIndex}-${matchIndex}`}
+      key={`result-${play.roundIndex}-${play.matchIndex}`}
       className="anim-fade-up flex flex-1 flex-col gap-4 p-4"
     >
       <ScoreBar player={shownPlayer} cpu={shownCpu} />
@@ -387,11 +337,11 @@ export default function Game() {
       </div>
 
       <button
-        onClick={next}
+        onClick={onNext}
         disabled={!settled}
         className="bg-accent active:bg-accent-strong w-full rounded-2xl py-4 text-lg font-black tracking-wide text-black transition-all active:scale-[0.98] disabled:opacity-40"
       >
-        {isLastMatch
+        {lastMatch
           ? isFinal
             ? "REZULTAT FINAL"
             : "RUNDA URMĂTOARE"
